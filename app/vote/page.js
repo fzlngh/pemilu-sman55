@@ -3,6 +3,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
 import { api, API } from '../../lib/api';
+import { getSupabaseBrowserClient } from '../../lib/supabase';
 
 function Vote() {
   const router = useRouter();
@@ -21,8 +22,19 @@ function Vote() {
     api('/me', { token: tok.current }).then(async (m) => {
       if (m.blocked) return setPhase('blocked');
       if (m.voted) return setPhase('done');
-      setCands(await api('/candidates'));
-      setPhase('intro');
+      try {
+        const { data, error } = await getSupabaseBrowserClient()
+          .from('candidates')
+          .select('id, number, name, vision')
+          .order('number')
+          .order('id');
+        if (error) throw error;
+        setCands(data);
+        setPhase('intro');
+      } catch (x) {
+        setErr(x.message || 'Gagal memuat kandidat dari Supabase.');
+        setPhase('load-error');
+      }
     }).catch(() => router.replace('/'));
   }, [params, router]);
 
@@ -75,6 +87,16 @@ function Vote() {
   };
 
   if (phase === 'loading') return <main className="wrap"><p>Memuat…</p></main>;
+
+  if (phase === 'load-error') return (
+    <main className="wrap" style={{ display: 'grid', placeItems: 'center', minHeight: '100vh' }}>
+      <div className="card" style={{ maxWidth: 460, textAlign: 'center' }}>
+        <h2>Kandidat tidak dapat dimuat</h2>
+        <p className="err">{err}</p>
+        <button className="btn punch" style={{ marginTop: 16 }} onClick={() => window.location.reload()}>Coba lagi</button>
+      </div>
+    </main>
+  );
 
   if (phase === 'blocked') return (
     <main className="wrap" style={{ display: 'grid', placeItems: 'center', minHeight: '100vh' }}>
