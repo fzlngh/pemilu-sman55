@@ -50,10 +50,10 @@ export default function Login() {
             ))}
           </h1>
           <motion.form className="login-form" onSubmit={submit} initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.9 }}>
-            <input className="field" inputMode="numeric" maxLength={10} placeholder="NISN (10 digit)" value={nisn}
+            <input className="field" inputMode="numeric" maxLength={12} placeholder="NISN (9-12 digit)" value={nisn}
               onChange={(e) => setNisn(e.target.value.replace(/\D/g, ''))} aria-label="NISN" />
             <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }} className="btn punch"
-              style={{ marginTop: 14, width: '100%' }} disabled={nisn.length !== 10 || busy}>
+              style={{ marginTop: 14, width: '100%' }} disabled={nisn.length < 9 || busy}>
               {busy ? 'Memeriksa…' : 'Masuk dan pilih'}
             </motion.button>
             {err && <motion.p animate={{ x: [0, -8, 8, -4, 0] }} className="err">{err}</motion.p>}

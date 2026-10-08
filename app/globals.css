@@ -58,3 +58,55 @@ td,th{padding:10px;border-bottom:1px solid var(--line);text-align:left}
 @media(max-width:360px){
   .field{padding:14px 12px;font-size:1rem;letter-spacing:.06em}
 }
+/* ===== Halaman vote: foto kandidat & elemen baru (dasar = tampilan mobile) ===== */
+.vote-sub,.cand-badge,.modal-photo,.redirect-hint{display:none}
+.cand-photo{position:relative;width:100%;aspect-ratio:4/3;border-radius:14px;overflow:hidden;margin-bottom:14px;background:linear-gradient(135deg,var(--punch),var(--orange));display:grid;place-items:center}
+.cand-photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top;-webkit-user-drag:none}
+.cand-initial{font-size:3rem;font-weight:800;color:#fff;letter-spacing:.04em}
+
+/* ===== Percantik desktop saja (mobile ≤700px tidak tersentuh) ===== */
+@media(min-width:701px){
+  .card{box-shadow:0 12px 32px #50260c1f}
+
+  /* latar sama dengan halaman login, diberi lapisan krem agar teks tetap terbaca */
+  .vote-page,.screen{position:relative;isolation:isolate}
+  .vote-page::before,.screen::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(#fbeee3d9,#fbeee3eb),url('/depsis-desktop-bg.png') center/cover no-repeat}
+
+  .vote-page{max-width:1280px;padding:28px 40px 56px}
+  .vote-head{display:flex;align-items:center;gap:28px;max-width:1120px;margin:0 auto;padding:18px 32px;border:1px solid #fff9;border-radius:26px;background:#fff1d9d9;box-shadow:0 18px 48px #50260c26;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+  .vote-head .logo{width:150px!important;flex:none}
+  .vote-title{margin:0!important;font-size:clamp(2rem,3.2vw,2.8rem)!important;letter-spacing:-.035em}
+  .vote-sub{display:block;margin-top:6px;font-weight:600;color:var(--rust)}
+
+  .cand-grid{grid-template-columns:repeat(auto-fit,minmax(300px,360px));justify-content:center;gap:32px;max-width:1200px;margin:36px auto 0}
+  .cand-card{padding:0;overflow:hidden;display:flex;flex-direction:column;border-radius:26px;box-shadow:0 22px 50px #50260c2e;background:var(--paper)}
+  .cand-card .cand-photo{aspect-ratio:4/5;border-radius:0;margin:0}
+  .cand-card .cand-photo::after{content:"";position:absolute;inset:auto 0 0 0;height:38%;background:linear-gradient(transparent,#37160775)}
+  .cand-initial{font-size:5rem}
+  .cand-badge{display:grid;place-items:center;position:absolute;z-index:2;top:16px;left:16px;width:58px;height:58px;border-radius:50%;background:var(--punch);color:var(--ink);font-size:1.7rem;font-weight:800;line-height:1;border:3px solid #fff;box-shadow:0 8px 20px #37160740}
+  .cand-number{display:none}
+  .cand-body{display:flex;flex-direction:column;flex:1;padding:22px 26px 26px}
+  .cand-name{font-size:1.5rem;line-height:1.2;margin:0 0 10px!important}
+  .cand-vision{flex:1;margin-bottom:20px!important;line-height:1.6;font-size:.98rem;max-height:11rem;overflow-y:auto;padding-right:4px;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+  .cand-btn{width:100%;padding:15px 26px;transition:background .2s,color .2s,box-shadow .2s}
+  .cand-btn:hover{background:var(--punch);color:var(--ink);box-shadow:0 8px 18px #c8781259}
+  .cand-btn:focus-visible,.btn:focus-visible{outline:3px solid var(--punch);outline-offset:3px}
+
+  .modal{backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+  .confirm-card{padding:30px 32px;border-radius:26px;max-width:440px!important}
+  .modal-photo{display:block;width:132px;margin:0 auto 18px}
+  .modal-photo .cand-photo{aspect-ratio:4/5;border-radius:18px;margin:0;box-shadow:0 12px 26px #37160733}
+  .modal-photo .cand-photo::after{display:none}
+  .modal-photo .cand-badge{top:8px;left:8px;width:38px;height:38px;font-size:1.05rem;border-width:2px}
+  .modal-photo .cand-initial{font-size:2.6rem}
+
+  .screen .card{padding:36px 40px;border-radius:28px;background:#fffaf5f2;box-shadow:0 22px 64px #50260c33}
+  .redirect-hint{display:block;margin-top:30px;font-weight:600;color:var(--rust)}
+  .redirect-bar{width:260px;height:6px;margin:10px auto 0;border-radius:99px;background:var(--line);overflow:hidden}
+  .redirect-bar i{display:block;height:100%;border-radius:inherit;background:var(--mint);transform-origin:left}
+}
+@media(min-width:701px) and (max-height:800px){
+  .cand-card .cand-photo{aspect-ratio:1/1}
+  .vote-page{padding-top:18px}
+  .cand-grid{margin-top:24px}
+}

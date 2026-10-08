@@ -5,6 +5,21 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { api, API } from '../../lib/api';
 import { getSupabaseBrowserClient } from '../../lib/supabase';
 
+const DONE_MS = 3600; // lama animasi sukses sebelum kembali ke halaman login
+
+function Photo({ c }) {
+  const [bad, setBad] = useState(false);
+  const initials = c.name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+  return (
+    <div className="cand-photo">
+      {c.photo_url && !bad
+        ? <img src={c.photo_url} alt={`Foto ${c.name}`} draggable={false} onError={() => setBad(true)} />
+        : <span className="cand-initial" aria-hidden="true">{initials}</span>}
+      <span className="cand-badge">{c.number}</span>
+    </div>
+  );
+}
+
 function Vote() {
   const router = useRouter();
   const params = useSearchParams();
@@ -21,13 +36,12 @@ function Vote() {
     if (!tok.current) return router.replace('/');
     api('/me', { token: tok.current }).then(async (m) => {
       if (m.blocked) return setPhase('blocked');
-      if (m.voted) return setPhase('done');
+      if (m.voted) { sessionStorage.removeItem('tok'); return setPhase('done'); }
       try {
-        const { data, error } = await getSupabaseBrowserClient()
-          .from('candidates')
-          .select('id, number, name, vision')
-          .order('number')
-          .order('id');
+        const sb = getSupabaseBrowserClient();
+        const load = (cols) => sb.from('candidates').select(cols).order('number').order('id');
+        let { data, error } = await load('id, number, name, vision, photo_url');
+        if (error) ({ data, error } = await load('id, number, name, vision')); // kolom foto belum dimigrasi
         if (error) throw error;
         setCands(data);
         setPhase('intro');
@@ -70,6 +84,12 @@ function Vote() {
     };
   }, [phase, violate]);
 
+  useEffect(() => {
+    if (phase !== 'done') return;
+    const t = setTimeout(() => router.replace('/'), DONE_MS);
+    return () => clearTimeout(t);
+  }, [phase, router]);
+
   const start = async () => {
     try {
       await document.documentElement.requestFullscreen();
@@ -89,7 +109,7 @@ function Vote() {
   if (phase === 'loading') return <main className="wrap"><p>Memuat…</p></main>;
 
   if (phase === 'load-error') return (
-    <main className="wrap" style={{ display: 'grid', placeItems: 'center', minHeight: '100vh' }}>
+    <main className="wrap screen" style={{ display: 'grid', placeItems: 'center', minHeight: '100vh' }}>
       <div className="card" style={{ maxWidth: 460, textAlign: 'center' }}>
         <h2>Kandidat tidak dapat dimuat</h2>
         <p className="err">{err}</p>
@@ -99,7 +119,7 @@ function Vote() {
   );
 
   if (phase === 'blocked') return (
-    <main className="wrap" style={{ display: 'grid', placeItems: 'center', minHeight: '100vh' }}>
+    <main className="wrap screen" style={{ display: 'grid', placeItems: 'center', minHeight: '100vh' }}>
       <motion.div className="card" style={{ maxWidth: 460, textAlign: 'center', borderColor: 'var(--coral)' }}
         initial={{ scale: 0.7, rotate: -4 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: 'spring' }}>
         <div style={{ fontSize: '3rem' }}>🔒</div>
@@ -111,7 +131,7 @@ function Vote() {
   );
 
   if (phase === 'done') return (
-    <main className="wrap" style={{ display: 'grid', placeItems: 'center', minHeight: '100vh', textAlign: 'center' }}>
+    <main className="wrap screen" style={{ display: 'grid', placeItems: 'center', minHeight: '100vh', textAlign: 'center' }}>
       <div>
         <svg width="140" height="140" viewBox="0 0 100 100">
           <motion.circle cx="50" cy="50" r="44" fill="none" stroke="#c87812" strokeWidth="6" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.8 }} />
@@ -119,12 +139,16 @@ function Vote() {
         </svg>
         <motion.h1 style={{ fontSize: '2.6rem', marginTop: 16 }} initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 1.1 }}>Suaramu sudah tercatat</motion.h1>
         <p style={{ marginTop: 10 }}>Terima kasih sudah ikut memilih.</p>
+        <div className="redirect-hint" aria-live="polite">
+          <span>Kembali ke halaman login…</span>
+          <div className="redirect-bar"><motion.i initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ duration: (DONE_MS - 400) / 1000, ease: 'linear' }} /></div>
+        </div>
       </div>
     </main>
   );
 
   if (phase === 'intro') return (
-    <main className="wrap" style={{ display: 'grid', placeItems: 'center', minHeight: '100vh' }}>
+    <main className="wrap screen" style={{ display: 'grid', placeItems: 'center', minHeight: '100vh' }}>
       <motion.div className="card" style={{ maxWidth: 520 }} initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
         <img src="/logo-sman55.png" alt="Logo SMA Negeri 55 Jakarta" className="logo" style={{ width: 200, marginBottom: 14 }} />
         <h2>Sebelum mulai</h2>
@@ -141,25 +165,34 @@ function Vote() {
   );
 
   return (
-    <main className="wrap" style={{ minHeight: '100vh' }}>
-      <img src="/logo-sman55.png" alt="Logo SMA Negeri 55 Jakarta" className="logo" style={{ width: 170 }} />
-      <motion.h1 style={{ fontSize: '2.4rem', margin: '10px 0 24px' }} initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>Pilih satu kandidat</motion.h1>
+    <main className="wrap vote-page" style={{ minHeight: '100vh' }}>
+      <header className="vote-head">
+        <img src="/logo-sman55.png" alt="Logo SMA Negeri 55 Jakarta" className="logo" style={{ width: 170 }} />
+        <div>
+          <motion.h1 className="vote-title" style={{ fontSize: '2.4rem', margin: '10px 0 24px' }} initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>Pilih satu kandidat</motion.h1>
+          <p className="vote-sub">Baca visi dan misi tiap kandidat, lalu pilih satu. Pilihan tidak dapat diubah.</p>
+        </div>
+      </header>
       {err && <p className="err">{err}</p>}
-      <div className="grid">
+      <div className="grid cand-grid">
         {cands.map((c, i) => (
-          <motion.div key={c.id} className="card" initial={{ opacity: 0, y: 60, rotate: i % 2 ? 3 : -3 }} animate={{ opacity: 1, y: 0, rotate: 0 }}
+          <motion.div key={c.id} className="card cand-card" initial={{ opacity: 0, y: 60, rotate: i % 2 ? 3 : -3 }} animate={{ opacity: 1, y: 0, rotate: 0 }}
             transition={{ delay: 0.15 * i, type: 'spring' }} whileHover={{ y: -8, rotate: i % 2 ? -1 : 1 }}>
-            <div style={{ fontSize: '4.5rem', fontWeight: 800, color: 'var(--coral)', lineHeight: 1 }}>{c.number}</div>
-            <h2 style={{ margin: '8px 0' }}>{c.name}</h2>
-            <p style={{ marginBottom: 18 }}>{c.vision}</p>
-            <motion.button whileTap={{ scale: 0.94 }} className="btn" onClick={() => setPick(c)}>Pilih nomor {c.number}</motion.button>
+            <Photo c={c} />
+            <div className="cand-body">
+              <div className="cand-number" style={{ fontSize: '4.5rem', fontWeight: 800, color: 'var(--coral)', lineHeight: 1 }}>{c.number}</div>
+              <h2 className="cand-name" style={{ margin: '8px 0' }}>{c.name}</h2>
+              <p className="cand-vision" style={{ marginBottom: 18 }}>{c.vision}</p>
+              <motion.button whileTap={{ scale: 0.94 }} className="btn cand-btn" onClick={() => setPick(c)}>Pilih nomor {c.number}</motion.button>
+            </div>
           </motion.div>
         ))}
       </div>
       <AnimatePresence>
         {pick && (
           <motion.div className="modal" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <motion.div className="card" style={{ maxWidth: 420, textAlign: 'center' }} initial={{ scale: 0.6 }} animate={{ scale: 1 }} exit={{ scale: 0.6 }} transition={{ type: 'spring' }}>
+            <motion.div className="card confirm-card" style={{ maxWidth: 420, textAlign: 'center' }} initial={{ scale: 0.6 }} animate={{ scale: 1 }} exit={{ scale: 0.6 }} transition={{ type: 'spring' }}>
+              <div className="modal-photo"><Photo c={pick} /></div>
               <h2>Yakin memilih nomor {pick.number}?</h2>
               <p style={{ margin: '10px 0 20px' }}>{pick.name}. Pilihan tidak dapat diubah.</p>
               <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>

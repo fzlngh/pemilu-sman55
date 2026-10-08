@@ -2,10 +2,28 @@
 import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { api } from '../../lib/api';
+import { api, API } from '../../lib/api';
 
 const COLORS = ['#b2450e', '#f2b04a', '#8b2a3a', '#c87812', '#f77d1e', '#68625d'];
 const plain = { letterSpacing: 0 };
+
+// Perkecil foto di browser (maks 900px, JPEG) agar upload ringan dan cepat.
+function resizeImage(file, max = 900) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      c.toBlob((b) => (b ? resolve(b) : reject(new Error('Gagal memproses foto'))), 'image/jpeg', 0.86);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('File bukan gambar yang valid')); };
+    img.src = url;
+  });
+}
 
 export default function Admin() {
   const [tok, setTok] = useState(null);
@@ -16,6 +34,9 @@ export default function Admin() {
   const [voters, setVoters] = useState([]);
   const [bulk, setBulk] = useState('');
   const [msg, setMsg] = useState('');
+  const [photo, setPhoto] = useState(null); // { blob, preview }
+  const [saving, setSaving] = useState(false);
+  const [candErr, setCandErr] = useState('');
   const [cn, setCn] = useState({ number: '', name: '', vision: '' });
 
   useEffect(() => { setTok(sessionStorage.getItem('adm')); }, []);
@@ -40,9 +61,34 @@ export default function Admin() {
     setBulk(''); load();
   };
   const act = async (path, method) => { await api(path, { method, token: tok }); load(); };
+  const pickPhoto = async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    setCandErr('');
+    try {
+      const blob = await resizeImage(f);
+      if (photo) URL.revokeObjectURL(photo.preview);
+      setPhoto({ blob, preview: URL.createObjectURL(blob) });
+    } catch (x) { setCandErr(x.message); }
+  };
+  const clearPhoto = () => { if (photo) URL.revokeObjectURL(photo.preview); setPhoto(null); };
   const addCand = async () => {
-    await api('/admin/candidates', { method: 'POST', token: tok, body: { ...cn, number: +cn.number } });
-    setCn({ number: '', name: '', vision: '' }); load();
+    setSaving(true); setCandErr('');
+    try {
+      let photo_url = '';
+      if (photo) {
+        const res = await fetch(API + '/api/admin/upload', {
+          method: 'POST', headers: { 'Content-Type': 'image/jpeg', Authorization: 'Bearer ' + tok }, body: photo.blob,
+        });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(d.error || 'Gagal mengunggah foto');
+        photo_url = d.url;
+      }
+      await api('/admin/candidates', { method: 'POST', token: tok, body: { ...cn, number: +cn.number, photo_url } });
+      setCn({ number: '', name: '', vision: '' }); clearPhoto(); load();
+    } catch (x) { setCandErr(x.message); }
+    finally { setSaving(false); }
   };
 
   if (!tok) return (
@@ -132,12 +178,28 @@ export default function Admin() {
             <h2>Tambah kandidat</h2>
             <input className="field" style={plain} placeholder="Nomor urut" value={cn.number} onChange={(e) => setCn({ ...cn, number: e.target.value })} />
             <input className="field" style={plain} placeholder="Nama" value={cn.name} onChange={(e) => setCn({ ...cn, name: e.target.value })} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+              {photo
+                ? <img src={photo.preview} alt="Pratinjau foto" style={{ width: 96, height: 120, objectFit: 'cover', objectPosition: 'center top', borderRadius: 12, border: '2px solid var(--line)' }} />
+                : <div style={{ width: 96, height: 120, borderRadius: 12, border: '2px dashed var(--line)', display: 'grid', placeItems: 'center', fontSize: '.85rem', textAlign: 'center', padding: 6 }}>Belum ada foto</div>}
+              <div style={{ display: 'grid', gap: 8 }}>
+                <label className="btn ghost" style={{ display: 'inline-block', textAlign: 'center' }}>
+                  {photo ? 'Ganti foto' : 'Pilih foto'}
+                  <input type="file" accept="image/jpeg,image/png,image/webp" onChange={pickPhoto} style={{ display: 'none' }} />
+                </label>
+                {photo && <button type="button" className="btn ghost" onClick={clearPhoto}>Hapus foto</button>}
+                <span style={{ fontSize: '.85rem' }}>JPG, PNG, atau WebP. Opsional.</span>
+              </div>
+            </div>
             <textarea className="field" rows={3} style={plain} placeholder="Visi dan misi" value={cn.vision} onChange={(e) => setCn({ ...cn, vision: e.target.value })} />
-            <button className="btn punch" onClick={addCand} disabled={!cn.name || !cn.number}>Simpan kandidat</button>
+            <button className="btn punch" onClick={addCand} disabled={!cn.name || !cn.number || saving}>{saving ? 'Menyimpan…' : 'Simpan kandidat'}</button>
+            {candErr && <p className="err">{candErr}</p>}
           </div>
           <div className="grid">
             {stats?.results.map((c) => (
-              <div className="card" key={c.id}><h2>{c.number}. {c.name}</h2><p style={{ margin: '8px 0 14px' }}>{c.vision}</p>
+              <div className="card" key={c.id}>
+                {c.photo_url && <img src={c.photo_url} alt={`Foto ${c.name}`} style={{ width: 96, height: 120, objectFit: 'cover', objectPosition: 'center top', borderRadius: 12, marginBottom: 10 }} />}
+                <h2>{c.number}. {c.name}</h2><p style={{ margin: '8px 0 14px' }}>{c.vision}</p>
                 <button className="btn ghost" onClick={() => confirm('Hapus kandidat ini?') && act(`/admin/candidates/${c.id}`, 'DELETE')}>Hapus</button></div>
             ))}
           </div>
