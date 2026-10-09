@@ -27,29 +27,36 @@ function Vote() {
   const [cands, setCands] = useState([]);
   const [pick, setPick] = useState(null);
   const [err, setErr] = useState('');
+  const [armed, setArmed] = useState(false); // kunci aktif
   const tok = useRef('');
   const locked = useRef(false);
+
+  const leave = () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); };
 
   useEffect(() => {
     if (params.get('blocked')) return setPhase('blocked');
     tok.current = sessionStorage.getItem('tok') || '';
     if (!tok.current) return router.replace('/');
+    setArmed(!!document.fullscreenElement); // datang dari login dalam layar penuh => terkunci sejak awal
     api('/me', { token: tok.current }).then(async (m) => {
-      if (m.blocked) return setPhase('blocked');
-      if (m.voted) { sessionStorage.removeItem('tok'); return setPhase('done'); }
+      if (locked.current) return;
+      if (m.blocked) { setArmed(false); return setPhase('blocked'); }
+      if (m.voted) { sessionStorage.removeItem('tok'); setArmed(false); return setPhase('done'); }
       try {
         const sb = getSupabaseBrowserClient();
         const load = (cols) => sb.from('candidates').select(cols).order('number').order('id');
         let { data, error } = await load('id, number, name, vision, photo_url');
         if (error) ({ data, error } = await load('id, number, name, vision')); // kolom foto belum dimigrasi
         if (error) throw error;
+        if (locked.current) return;
         setCands(data);
-        setPhase('intro');
+        setPhase(document.fullscreenElement ? 'voting' : 'intro');
       } catch (x) {
         setErr(x.message || 'Gagal memuat kandidat dari Supabase.');
+        setArmed(false); leave();
         setPhase('load-error');
       }
-    }).catch(() => router.replace('/'));
+    }).catch(() => { setArmed(false); leave(); router.replace('/'); });
   }, [params, router]);
 
   const violate = useCallback((reason) => {
@@ -61,11 +68,12 @@ function Vote() {
       body: JSON.stringify({ reason }),
     });
     sessionStorage.removeItem('tok');
+    setArmed(false);
     setPhase('blocked');
   }, []);
 
   useEffect(() => {
-    if (phase !== 'voting') return;
+    if (!armed) return;
     const onVis = () => document.hidden && violate('Berpindah tab/jendela');
     const onBlur = () => violate('Jendela kehilangan fokus');
     const onFs = () => !document.fullscreenElement && violate('Keluar dari layar penuh');
@@ -82,7 +90,9 @@ function Vote() {
       document.removeEventListener('contextmenu', block);
       document.removeEventListener('copy', block);
     };
-  }, [phase, violate]);
+  }, [armed, violate]);
+
+  useEffect(() => { if (phase === 'blocked') leave(); }, [phase]);
 
   useEffect(() => {
     if (phase !== 'done') return;
@@ -93,6 +103,7 @@ function Vote() {
   const start = async () => {
     try {
       await document.documentElement.requestFullscreen();
+      setArmed(true);
       setPhase('voting');
     } catch { setErr('Browser kamu tidak mendukung layar penuh. Gunakan Chrome, Edge, atau Firefox di laptop/PC.'); }
   };
@@ -101,7 +112,8 @@ function Vote() {
       locked.current = true; // pemilihan selesai, kunci dilepas
       await api('/vote', { method: 'POST', token: tok.current, body: { candidateId: pick.id } });
       sessionStorage.removeItem('tok');
-      if (document.fullscreenElement) await document.exitFullscreen();
+      setArmed(false);
+      leave();
       setPhase('done');
     } catch (x) { locked.current = false; setErr(x.message); setPick(null); }
   };
@@ -151,14 +163,14 @@ function Vote() {
     <main className="wrap screen" style={{ display: 'grid', placeItems: 'center', minHeight: '100vh' }}>
       <motion.div className="card" style={{ maxWidth: 520 }} initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
         <img src="/logo-sman55.png" alt="Logo SMA Negeri 55 Jakarta" className="logo" style={{ width: 200, marginBottom: 14 }} />
-        <h2>Sebelum mulai</h2>
+        <h2>Layar penuh terlepas</h2>
         <ul style={{ margin: '14px 0 20px 20px', lineHeight: 1.7 }}>
           <li>Pemilihan berjalan dalam layar penuh.</li>
           <li>Pindah tab, pindah jendela, atau keluar layar penuh akan langsung memblokir akunmu.</li>
           <li>Untuk membuka blokir, lapor ke admin.</li>
           <li>Satu NISN hanya bisa memilih satu kali.</li>
         </ul>
-        <button className="btn punch" onClick={start}>Masuk layar penuh dan mulai</button>
+        <button className="btn punch" onClick={start}>Masuk layar penuh dan lanjutkan</button>
         {err && <p className="err">{err}</p>}
       </motion.div>
     </main>
