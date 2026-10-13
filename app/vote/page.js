@@ -56,7 +56,12 @@ function Vote() {
         setArmed(false); leave();
         setPhase('load-error');
       }
-    }).catch(() => { setArmed(false); leave(); router.replace('/'); });
+    }).catch((x) => {
+      setArmed(false); leave();
+      if (x?.status === 401) return router.replace('/'); // sesi benar-benar tidak valid
+      setErr(x?.message || 'Server sedang sibuk, coba lagi.'); // gangguan sementara: jangan buang sesi
+      setPhase('load-error');
+    });
   }, [params, router]);
 
   const violate = useCallback((reason) => {

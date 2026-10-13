@@ -1,10 +1,10 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Cell, LabelList, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { api, API } from '../../lib/api';
-
-const COLORS = ['#b2450e', '#f2b04a', '#8b2a3a', '#c87812', '#f77d1e', '#68625d'];
+import { COLORS, buildResults, fmtPct } from '../../lib/results';
+import { exportResultsPdf } from '../../lib/exportPdf';
 const plain = { letterSpacing: 0 };
 
 // Perkecil foto di browser (maks 900px, JPEG) agar upload ringan dan cepat.
@@ -38,6 +38,8 @@ export default function Admin() {
   const [saving, setSaving] = useState(false);
   const [candErr, setCandErr] = useState('');
   const [cn, setCn] = useState({ number: '', name: '', vision: '' });
+  const [exporting, setExporting] = useState(false);
+  const [exportErr, setExportErr] = useState('');
 
   useEffect(() => { setTok(sessionStorage.getItem('adm')); }, []);
   const load = useCallback(async () => {
@@ -45,7 +47,10 @@ export default function Admin() {
     try {
       setStats(await api('/admin/stats', { token: tok }));
       setVoters(await api('/admin/voters', { token: tok }));
-    } catch { sessionStorage.removeItem('adm'); setTok(null); }
+    } catch (x) {
+      // Hanya keluar bila sesi memang ditolak; gangguan jaringan/server sementara tidak boleh melempar admin keluar.
+      if (x.status === 401) { sessionStorage.removeItem('adm'); setTok(null); }
+    }
   }, [tok]);
   useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, [load]);
 
@@ -102,7 +107,28 @@ export default function Admin() {
     </main>
   );
 
-  const data = stats?.results.map((r) => ({ name: `${r.number}. ${r.name}`, votes: r.votes })) || [];
+  const { rows: results, totalVotes } = buildResults(stats);
+  const data = results.map((r) => ({ name: `${r.number}. ${r.name}`, votes: r.votes, percent: r.percent }));
+  const exportPdf = async () => {
+    setExporting(true); setExportErr('');
+    try { await exportResultsPdf(stats); }
+    catch (x) { console.error(x); setExportErr('Gagal membuat PDF. Coba lagi.'); }
+    finally { setExporting(false); }
+  };
+  const barLabel = ({ x, y, width, value, index }) => (
+    <text x={x + width / 2} y={y - 8} textAnchor="middle" fontSize={13} fontWeight={700} fill="#2b1d16">
+      {`${value} suara (${fmtPct(data[index]?.percent || 0)})`}
+    </text>
+  );
+  const pieLabel = ({ cx, cy, midAngle, outerRadius, percent: ratio, index }) => {
+    if (!data[index]?.votes) return null;
+    const rad = Math.PI / 180;
+    const r = outerRadius + 18;
+    const x = cx + r * Math.cos(-midAngle * rad);
+    const y = cy + r * Math.sin(-midAngle * rad);
+    return <text x={x} y={y} textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize={12} fontWeight={700} fill="#2b1d16">{`${fmtPct(ratio * 100)} (${data[index].votes})`}</text>;
+  };
+  const tipFormat = (value, _name, item) => [`${value} suara (${fmtPct(item?.payload?.percent || 0)})`, 'Perolehan'];
   const blocked = voters.filter((v) => v.blocked);
   const sorted = [...voters].sort((a, b) => b.blocked - a.blocked || a.nisn.localeCompare(b.nisn));
   return (
@@ -126,20 +152,46 @@ export default function Admin() {
               </motion.div>
             ))}
           </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+            <p style={{ margin: 0 }}>Total suara masuk: <strong>{totalVotes}</strong></p>
+            <button className="btn punch" onClick={exportPdf} disabled={exporting}>{exporting ? 'Membuat PDF…' : 'Ekspor PDF'}</button>
+          </div>
+          {exportErr && <p className="err" style={{ marginBottom: 10 }}>{exportErr}</p>}
           <div className="grid">
-            <div className="card" style={{ height: 340 }}>
-              <ResponsiveContainer><BarChart data={data}>
-                <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" /><YAxis allowDecimals={false} /><Tooltip />
-                <Bar dataKey="votes" name="Suara" radius={[8, 8, 0, 0]} animationDuration={1200}>{data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}</Bar>
+            <div className="card" style={{ height: 380 }}>
+              <ResponsiveContainer><BarChart data={data} margin={{ top: 34, right: 10, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" /><YAxis allowDecimals={false} /><Tooltip formatter={tipFormat} />
+                <Bar dataKey="votes" name="Suara" radius={[8, 8, 0, 0]} animationDuration={1200}>
+                  {data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  <LabelList dataKey="votes" content={barLabel} />
+                </Bar>
               </BarChart></ResponsiveContainer>
             </div>
-            <div className="card" style={{ height: 340 }}>
-              <ResponsiveContainer><PieChart>
-                <Pie data={data} dataKey="votes" nameKey="name" outerRadius={110} innerRadius={50} animationDuration={1200}>{data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}</Pie><Tooltip />
+            <div className="card" style={{ height: 380 }}>
+              <ResponsiveContainer><PieChart margin={{ top: 10, right: 40, left: 40, bottom: 10 }}>
+                <Pie data={data} dataKey="votes" nameKey="name" outerRadius={105} innerRadius={48} animationDuration={1200} label={pieLabel} labelLine={false}>
+                  {data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                </Pie><Tooltip formatter={tipFormat} />
               </PieChart></ResponsiveContainer>
             </div>
           </div>
-          <p style={{ marginTop: 14 }}>Grafik hanya menampilkan jumlah suara per kandidat. Tidak ada data siapa memilih siapa.</p>
+          <div className="card" style={{ marginTop: 20, overflowX: 'auto' }}>
+            <table>
+              <thead><tr><th>No.</th><th>Kandidat</th><th style={{ textAlign: 'right' }}>Jumlah suara</th><th style={{ textAlign: 'right' }}>Persentase</th></tr></thead>
+              <tbody>
+                {results.map((r, i) => (
+                  <tr key={r.id}>
+                    <td>{r.number}</td>
+                    <td><span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, marginRight: 8, background: COLORS[i % COLORS.length] }} />{r.name}</td>
+                    <td style={{ textAlign: 'right' }}>{r.votes}</td>
+                    <td style={{ textAlign: 'right' }}>{fmtPct(r.percent)}</td>
+                  </tr>
+                ))}
+                <tr style={{ fontWeight: 700 }}><td></td><td>Total</td><td style={{ textAlign: 'right' }}>{totalVotes}</td><td style={{ textAlign: 'right' }}>{totalVotes ? '100,0%' : '0,0%'}</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p style={{ marginTop: 14 }}>Persentase dihitung dari total suara yang masuk. Grafik hanya menampilkan jumlah suara per kandidat. Tidak ada data siapa memilih siapa.</p>
         </>
       )}
 
