@@ -30,8 +30,7 @@ function Vote() {
   const [armed, setArmed] = useState(false); // kunci aktif
   const tok = useRef('');
   const locked = useRef(false);
-
-  const leave = () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); };
+  const [attempt, setAttempt] = useState(0); // naik saat 'Coba lagi', memuat ulang tanpa keluar dari layar penuh
 
   useEffect(() => {
     if (params.get('blocked')) return setPhase('blocked');
@@ -53,16 +52,16 @@ function Vote() {
         setPhase(document.fullscreenElement ? 'voting' : 'intro');
       } catch (x) {
         setErr(x.message || 'Gagal memuat kandidat dari Supabase.');
-        setArmed(false); leave();
+        setArmed(false);
         setPhase('load-error');
       }
     }).catch((x) => {
-      setArmed(false); leave();
+      setArmed(false);
       if (x?.status === 401) return router.replace('/'); // sesi benar-benar tidak valid
       setErr(x?.message || 'Server sedang sibuk, coba lagi.'); // gangguan sementara: jangan buang sesi
       setPhase('load-error');
     });
-  }, [params, router]);
+  }, [params, router, attempt]);
 
   const violate = useCallback((reason) => {
     if (locked.current) return;
@@ -97,8 +96,6 @@ function Vote() {
     };
   }, [armed, violate]);
 
-  useEffect(() => { if (phase === 'blocked') leave(); }, [phase]);
-
   useEffect(() => {
     if (phase !== 'done') return;
     const t = setTimeout(() => router.replace('/'), DONE_MS);
@@ -118,7 +115,6 @@ function Vote() {
       await api('/vote', { method: 'POST', token: tok.current, body: { candidateId: pick.id } });
       sessionStorage.removeItem('tok');
       setArmed(false);
-      leave();
       setPhase('done');
     } catch (x) { locked.current = false; setErr(x.message); setPick(null); }
   };
@@ -130,7 +126,7 @@ function Vote() {
       <div className="card" style={{ maxWidth: 460, textAlign: 'center' }}>
         <h2>Kandidat tidak dapat dimuat</h2>
         <p className="err">{err}</p>
-        <button className="btn punch" style={{ marginTop: 16 }} onClick={() => window.location.reload()}>Coba lagi</button>
+        <button className="btn punch" style={{ marginTop: 16 }} onClick={() => { setErr(''); setPhase('loading'); setAttempt((n) => n + 1); }}>Coba lagi</button>
       </div>
     </main>
   );
