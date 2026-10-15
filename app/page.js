@@ -1,29 +1,50 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { api } from '../lib/api';
+
+const leave = () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); };
 
 export default function Login() {
   const router = useRouter();
   const [nisn, setNisn] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-  // Layar penuh diminta tepat saat tombol Masuk ditekan (klik pemilih = izin dari browser),
-  // lalu dipertahankan sampai suara terkirim dan kembali ke halaman ini. Tidak ada pertanyaan lagi.
+  // null = belum dicek (mencegah modal berkedip bila pemilih datang dari halaman vote yang masih layar penuh)
+  const [fs, setFs] = useState(null);
+  const [notice, setNotice] = useState('');
+
+  useEffect(() => { setFs(!!document.fullscreenElement); }, []);
+
+  // Peringatan muncul di awal (dan bila layar penuh terlepas di halaman ini). Setelah suara terkirim,
+  // layar penuh dipertahankan sehingga pemilih berikutnya langsung melihat form login tanpa peringatan.
+  // Sebelum login belum ada NISN yang bisa diblokir, jadi pelanggaran di sini mengembalikan ke peringatan.
+  useEffect(() => {
+    if (!fs) return;
+    const out = (msg) => { setFs(false); setNotice(msg); leave(); };
+    const onVis = () => document.hidden && out('Kamu berpindah tab. Masuk layar penuh lagi untuk melanjutkan.');
+    const onBlur = () => out('Jendela kehilangan fokus. Masuk layar penuh lagi untuk melanjutkan.');
+    const onFs = () => !document.fullscreenElement && out('Kamu keluar dari layar penuh. Masuk lagi untuk melanjutkan.');
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('blur', onBlur);
+    document.addEventListener('fullscreenchange', onFs);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('blur', onBlur);
+      document.removeEventListener('fullscreenchange', onFs);
+    };
+  }, [fs]);
+
+  const start = async () => {
+    try { await document.documentElement.requestFullscreen(); setNotice(''); setFs(true); }
+    catch { setNotice('Browser kamu tidak mendukung layar penuh. Gunakan Chrome, Edge, atau Firefox di laptop/PC.'); }
+  };
+
   const submit = async (e) => {
     e.preventDefault(); setErr('');
+    if (!document.fullscreenElement) return setFs(false);
     setBusy(true);
-    try {
-      if (!document.fullscreenElement) {
-        if (!document.documentElement.requestFullscreen) throw new Error('nofs');
-        await document.documentElement.requestFullscreen();
-      }
-    } catch {
-      setErr('Browser kamu tidak mendukung layar penuh. Gunakan Chrome, Edge, atau Firefox di laptop/PC.');
-      setBusy(false);
-      return;
-    }
     try {
       const r = await api('/login', { method: 'POST', body: { nisn } });
       sessionStorage.setItem('tok', r.token);
@@ -35,6 +56,20 @@ export default function Login() {
   };
   return (
     <main className="home-page">
+      {fs === false && (
+        <div className="modal" role="dialog" aria-modal="true">
+          <motion.div className="card" style={{ maxWidth: 480 }} initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring' }}>
+            <h2>Mulai pemilihan</h2>
+            <ul style={{ margin: '14px 0 18px 20px', lineHeight: 1.7 }}>
+              <li>Pemilihan berjalan dalam layar penuh.</li>
+              <li>Setelah kamu login dengan NISN, pindah tab, pindah jendela, atau keluar layar penuh langsung memblokir akunmu.</li>
+              <li>Untuk membuka blokir, lapor ke admin.</li>
+            </ul>
+            {notice && <p className="err" style={{ marginBottom: 12 }}>{notice}</p>}
+            <button className="btn punch" style={{ width: '100%' }} onClick={start}>Masuk layar penuh dan mulai</button>
+          </motion.div>
+        </div>
+      )}
       <motion.img
         src="/depsis-2026-banner.png"
         alt="DEPSIS 2026"
@@ -63,16 +98,13 @@ export default function Login() {
             ))}
           </h1>
           <motion.form className="login-form" onSubmit={submit} initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.9 }}>
-            <input className="field" inputMode="numeric" maxLength={12} placeholder="NISN (9-12 digit)" value={nisn}
+            <input className="field" inputMode="numeric" maxLength={12} placeholder="NISN (9-12 digit)" value={nisn} disabled={!fs}
               onChange={(e) => setNisn(e.target.value.replace(/\D/g, ''))} aria-label="NISN" />
             <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }} className="btn punch"
-              style={{ marginTop: 14, width: '100%' }} disabled={nisn.length < 9 || busy}>
+              style={{ marginTop: 14, width: '100%' }} disabled={!fs || nisn.length < 9 || busy}>
               {busy ? 'Memeriksa…' : 'Masuk dan pilih'}
             </motion.button>
             {err && <motion.p animate={{ x: [0, -8, 8, -4, 0] }} className="err">{err}</motion.p>}
-            <p style={{ marginTop: 14, fontSize: '.85rem', lineHeight: 1.5, opacity: 0.85 }}>
-              Layar otomatis masuk mode penuh saat kamu menekan Masuk. Setelah itu, pindah tab, pindah jendela, atau keluar layar penuh akan memblokir akunmu. Untuk membuka blokir, lapor ke admin.
-            </p>
           </motion.form>
           <motion.p className="credit" initial={{ opacity: 0 }} animate={{ opacity: 0.8 }} transition={{ delay: 1.4 }}>
             powered by{' '}
